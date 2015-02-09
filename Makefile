@@ -6,7 +6,7 @@ all:
 
 lint:
 	pylint --max-line-length=100 \
-		   --disable=bad-whitespace,missing-docstring,invalid-name,attribute-defined-outside-init \
+		   --disable=bad-whitespace,missing-docstring,invalid-name,attribute-defined-outside-init,fixme \
 		   --ignored-modules=twisted.internet.reactor \
 		   --dummy-variables-rgx='.*_$$' \
 		   sstcs.py
