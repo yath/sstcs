@@ -4,9 +4,9 @@ import sys
 
 from twisted.internet import reactor
 import twisted.web.client
+
 from coherence.base import Coherence
 from coherence.upnp.devices.control_point import ControlPoint
-from coherence.upnp.core.action import Argument
 from xml.sax.saxutils import escape
 
 # Channel list types to use as fallbacks if designated channel is not in
@@ -21,7 +21,7 @@ opts = {
     'channel': 'Das Erste HD',
 }
 
-class Channel():
+class Channel(object):
     def __init__(self, from_dat=None):
         if from_dat:
             self.parse_dat(from_dat)
@@ -29,21 +29,24 @@ class Channel():
             raise ValueError()
 
     def __repr__(self):
-        return "<Channel %s '%s' ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>" % \
-            (self.dispno, self.title, self.ch_type, self.major_ch, self.minor_ch, self.ptc, self.prog_num)
+        return '<Channel %s "%s" ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>' % \
+            (self.dispno, self.title, self.ch_type, self.major_ch, self.minor_ch, self.ptc,
+             self.prog_num)
 
     def as_xml(self):
-        return '<?xml version="1.0" encoding="UTF-8" ?><Channel><ChType>%s</ChType><MajorCh>%d</MajorCh><MinorCh>%d</MinorCh><PTC>%d</PTC><ProgNum>%d</ProgNum></Channel>' % \
+        return ('<?xml version="1.0" encoding="UTF-8" ?><Channel><ChType>%s</ChType><MajorCh>%d'
+                '</MajorCh><MinorCh>%d</MinorCh><PTC>%d</PTC><ProgNum>%d</ProgNum></Channel>') % \
             (escape(self.ch_type), self.major_ch, self.minor_ch, self.ptc, self.prog_num)
 
 
-    def _getint(self, buf, offset):
-        # numbers are 16-bit little-endian unsigned
-        x = unpack('<H', buf[offset:offset+2])
-        return x[0]
 
     def parse_dat(self, buf):
-        t = self._getint(buf, 0)
+        def _getint(buf, offset):
+            # numbers are 16-bit little-endian unsigned
+            x = unpack('<H', buf[offset:offset+2])
+            return x[0]
+
+        t = _getint(buf, 0)
         if t == 4:
             self.ch_type = 'CDTV'
         elif t == 3:
@@ -51,35 +54,19 @@ class Channel():
         else:
             raise ValueError('Unknown channel type %d' % t)
 
-        self.major_ch = self._getint(buf, 2)
-        self.minor_ch = self._getint(buf, 4)
-        self.ptc      = self._getint(buf, 6)
-        self.prog_num = self._getint(buf, 8)
+        self.major_ch = _getint(buf, 2)
+        self.minor_ch = _getint(buf, 4)
+        self.ptc      = _getint(buf, 6)
+        self.prog_num = _getint(buf, 8)
 
-        if self._getint(buf, 10) != 0xffff:
+        if _getint(buf, 10) != 0xffff:
             raise ValueError('reserved field mismatch (%04x)' %
-                self._getint(buf, 10))
+                             _getint(buf, 10))
 
         self.dispno = buf[12:16].rstrip('\x00')
 
-        title_len = self._getint(buf, 22)
+        title_len = _getint(buf, 22)
         self.title = buf[24:24+title_len]
-
-def foo():
-    with open('ChannelList.dat', 'r') as f:
-        header = f.read(128)
-        assert len(header) == 128
-
-        while True:
-            data = f.read(124)
-            assert len(data) == 124
-            if not data:
-                break
-            print repr(Channel(from_dat=data))
-
-def fail():
-    assert False, "FIXME"
-
 
 def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel):
     if result['Result'] == 'NOTOK_InvalidCh':
@@ -139,14 +126,17 @@ def got_channel_list_url(results, service):
     # A string, like 0x12
     cl_type = results['ChannelListType']
 
-    twisted.web.client.getPage(results['ChannelListURL']).addCallback(got_channel_list, cl_type, service)
+    twisted.web.client.getPage(results['ChannelListURL']).\
+        addCallback(got_channel_list, cl_type, service)
 
 def dev_found(device):
     if opts['devtype']:
         if device.get_device_type() != opts['devtype']:
             return
 
-    services = [s for s in device.services if s.get_id() == 'urn:samsung.com:serviceId:MainTVAgent2']
+    services = [s for s in device.services if s.get_id() ==
+                'urn:samsung.com:serviceId:MainTVAgent2']
+
     if not services:
         return
     assert len(services) == 1, "Can't handle more than one service"
@@ -176,12 +166,12 @@ def start():
 def main():
     """Parse options and start twisted.reactor. Next: start()"""
     try:
-        opts_, args = getopt.getopt(sys.argv[1:], "l:t:c:", ["loglevel", "devtype", "channel"])
+        gopts, rest_ = getopt.getopt(sys.argv[1:], "l:t:c:", ["loglevel", "devtype", "channel"])
     except getopt.GetoptError as err:
         print str(err)
         sys.exit(1)
 
-    for o, a in opts_:
+    for o, a in gopts:
         if o == '-l':
             opts['loglevel'] = a
         elif o == '-t':
