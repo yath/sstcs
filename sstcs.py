@@ -166,8 +166,10 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
     elif result['Result'] == 'OK':
         print "Channel switched."
         reactor.stop()
+        return
     else:
         fatal('TV reported back result %s, no idea what that is.', result)
+        reactor.stop()
         return
 
 
