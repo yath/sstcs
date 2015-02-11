@@ -22,8 +22,17 @@ opts = {
     'channel': 'Das Erste HD',
 }
 
-# failure is just any "context", but name it 'failure' so we can use it as twisted errback
 def fatal(msg, failure=None):
+    """This writes an error message to stderr and stops reactor, if it's running.
+    Note that you must still return yourself from a Twisted callback or call
+    sys.exit() outside Twisted.
+
+    Args:
+        msg: The error message
+        failure: Any kind of additional information. It's just called failure so we
+                 can use it as errback for Twisted.
+    """
+
     if isinstance(failure, Failure):
         failure = failure.value
 
@@ -31,12 +40,8 @@ def fatal(msg, failure=None):
     if failure:
         sys.stderr.write("Additional information:\n%s\n" % str(failure))
 
-    # that's wrong, FIXME
     if reactor.running:
         reactor.stop()
-        reactor.crash()
-
-    sys.exit(2)
 
 
 class ContextException(Exception):
@@ -106,6 +111,7 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
             cl_type = cl_type_fallbacks.pop(0)
         except IndexError:
             fatal('TV doesn\'t know how to switch to %s' % channel)
+            return
 
         print "channel %s not in current channel list, trying with %s" % \
             (channel, cl_type)
@@ -119,6 +125,7 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
         reactor.stop()
     else:
         fatal('TV reported back result %s, no idea what that is.', result)
+        return
 
 
 def _parse_channel_list(channel_list):
@@ -153,11 +160,13 @@ def got_channel_list(channel_list, cl_type, service):
         all_channels = _parse_channel_list(channel_list)
     except Exception, e:
         fatal('Unable to parse channel list', e)
+        return
 
     matching_channels = [c for c in all_channels if c.title == opts['channel']]
 
     if len(matching_channels) == 0:
         fatal('No channel found')
+        return
 
     if len(matching_channels) > 1:
         print "More than one matching channel found (%s), picking first" % matching_channels
@@ -169,6 +178,7 @@ def got_channel_list(channel_list, cl_type, service):
     if not set_main_tv_channel:
         # FIXME retry, uh?
         fatal('Can\'t resolve SetMainTVChannel on TV, that\'s usually intermittent.')
+        return
 
     print "cl_type %s, channel as_xml %s" % (cl_type, channel.as_xml())
 
@@ -200,6 +210,7 @@ def dev_found(device):
     if len(services) > 1:
         fatal('Your TV reports back more than one service, can\'t handle that',
               [device, services])
+        return
 
     svc = services[0]
 
@@ -207,6 +218,7 @@ def dev_found(device):
     if not get_channel_list_url:
         # FIXME retry
         fatal('Can\'t resolve GetChannelListURL on TV, that\'s usually intermittent.')
+        return
 
     # UPnP somehow maps action's return values to state variables. If Coherence knows
     # of such a mapping, each value returned has to exist in that mapping. If not,
