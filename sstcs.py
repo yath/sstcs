@@ -1,6 +1,7 @@
 from struct import unpack
 import getopt
 import sys
+import codecs
 
 from twisted.internet import reactor
 from twisted.python.failure import Failure
@@ -309,6 +310,9 @@ def start():
 
 def main():
     """Parse options, set everything up and start twisted.reactor. Next: start()"""
+
+    # Force stdout to be utf-8 so we can actually pipe our output to grep. Argh.
+    sys.stdout = codecs.getwriter('utf8')(sys.stdout)
 
     try:
         gopts, rest_ = getopt.getopt(sys.argv[1:], "L:t:c:l",
