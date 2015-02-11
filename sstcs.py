@@ -29,7 +29,7 @@ def fatal(msg, failure=None):
 
     Args:
         msg: The error message
-        failure: Any kind of additional information. It's just called failure so we
+        failure: Any kind of additional information. It's just called 'failure' so we
                  can use it as errback for Twisted.
     """
 
@@ -45,6 +45,11 @@ def fatal(msg, failure=None):
 
 
 class ContextException(Exception):
+    """An Exception class with context attached to it, so a caller can catch a
+    (subclass of) ContextException, add some context with the exception's
+    add_context method, and rethrow it to another callee who might again add
+    information."""
+
     def __init__(self, msg, context=[]):
         self.msg     = msg
         self.context = list(context)
@@ -60,14 +65,37 @@ class ContextException(Exception):
 
 
 class ParseException(ContextException):
+    """An Exception for when something went wrong parsing the channel list."""
     pass
 
 
 class Channel(object):
+    """Class representing a Channel from the TV's channel list."""
+
     def __init__(self, from_dat):
+        """Constructs the Channel object from a binary channel list chunk."""
+
         self._parse_dat(from_dat)
 
     def _parse_dat(self, buf):
+        """Parses the binary data from a channel list chunk and initilizes the
+        member variables."""
+
+        # Each entry consists of (all integers are 16-bit little-endian unsigned):
+        #   [2 bytes int] Type of the channel. I've only seen 3 and 4, meaning
+        #                 CDTV (Cable Digital TV, I guess) or CATV (Cable Analog
+        #                 TV) respectively as argument for <ChType>
+        #   [2 bytes int] Major channel (<MajorCh>)
+        #   [2 bytes int] Minor channel (<MinorCh>)
+        #   [2 bytes int] PTC (Physical Transmission Channel?), <PTC>
+        #   [2 bytes int] Program Number (in the mux'ed MPEG or so?), <ProgNum>
+        #   [2 bytes int] They've always been 0xffff for me, so I'm just assuming
+        #                 they have to be :)
+        #   [4 bytes string, \0-padded] The (usually 3-digit, for me) channel number
+        #                               that's displayed (and which you can enter), in ASCII
+        #   [2 bytes int] Length of the channel title
+        #   [106 bytes string, \0-padded] The channel title, in UTF-8 (wow)
+
         def _getint(buf, offset):
             # numbers are 16-bit little-endian unsigned
             x = unpack('<H', buf[offset:offset+2])
@@ -100,12 +128,19 @@ class Channel(object):
              self.prog_num)
 
     def as_xml(self):
+        """The channel list as XML representation for SetMainTVChannel."""
+
         return ('<?xml version="1.0" encoding="UTF-8" ?><Channel><ChType>%s</ChType><MajorCh>%d'
                 '</MajorCh><MinorCh>%d</MinorCh><PTC>%d</PTC><ProgNum>%d</ProgNum></Channel>') % \
             (escape(self.ch_type), self.major_ch, self.minor_ch, self.ptc, self.prog_num)
 
 
 def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel):
+    """Called when SetMainTVChannel returns. Extracts the 'Result' field from the result
+    and in case the result is 'NOTOK_InvalidCh' calls SetMainTVChannel again, with itself
+    as callback the next channel type list from cl_type_fallbacks. Or, just tells the
+    user whether the TV succeeded in switching the channel or returned an error."""
+
     if result['Result'] == 'NOTOK_InvalidCh':
         try:
             cl_type = cl_type_fallbacks.pop(0)
@@ -129,8 +164,12 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
 
 
 def _parse_channel_list(channel_list):
+    """Splits the binary channel list into channel entry fields and returns a list of Channels."""
+
     # The channel list is binary file with a 128-byte header (ignored)
-    # and 124-byte chunks.
+    # and 124-byte chunks for each channel. See Channel._parse_dat for
+    # how each entry is constructed.
+
     if len(channel_list) < 252:
         raise ParseException(('channel list is smaller than it has to be for at least'\
                               'one channel (%d bytes (actual) vs. 252 bytes' % len(channel_list)),
@@ -156,6 +195,11 @@ def _parse_channel_list(channel_list):
 
 
 def got_channel_list(channel_list, cl_type, service):
+    """Called when the channel list URL has been retrieved. Parses the channel list, looks
+    for a matching channel and calls SetMainTVChannel with the passed cl_type (channel list
+    type). Next: set_channel_returned, passing a list of fallback channel types and everything
+    needed to reproduce the call to SetMainTVChannel for the fallback channel lists."""
+
     try:
         all_channels = _parse_channel_list(channel_list)
     except Exception, e:
@@ -188,6 +232,9 @@ def got_channel_list(channel_list, cl_type, service):
 
 
 def got_channel_list_url(results, service):
+    """Called when GetChannelListURL returns. Gets the URL referenced from the channel list and
+    the channel list type. Next: got_channel_list(channel_list_type)."""
+
     print "got_channel_list_url: %s" % results
     # A string, like 0x12
     cl_type = results['ChannelListType']
@@ -198,6 +245,9 @@ def got_channel_list_url(results, service):
 
 
 def dev_found(device):
+    """Called when a device was found and calls GetChannelListURL if the device matches and has
+    the appropriate service. Next: got_channel_list_url(service)."""
+
     if opts['devtype']:
         if device.get_device_type() != opts['devtype']:
             return
