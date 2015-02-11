@@ -120,7 +120,7 @@ class Channel(object):
         self.dispno = buf[12:16].rstrip('\x00')
 
         title_len = _getint(buf, 22)
-        self.title = buf[24:24+title_len]
+        self.title = buf[24:24+title_len].decode('utf-8')
 
     def __repr__(self):
         return '<Channel %s "%s" ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>' % \
@@ -305,7 +305,12 @@ def main():
         elif o == '-t':
             opts['devtype'] = a
         elif o == '-c':
-            opts['channel'] = a
+            try:
+                opts['channel'] = a.decode('utf-8')
+            except UnicodeDecodeError:
+                # any binary string is valid iso-8859-1, so it *should* never
+                # raise an error
+                opts['channel'] = a.decode('iso-8859-1')
         else:
             sys.stderr.write("Unknown option: %s\n", o)
             sys.exit(1)
