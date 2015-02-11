@@ -20,6 +20,7 @@ opts = {
     'loglevel': 'warning',
     'devtype' : 'urn:samsung.com:device:MainTVServer2:1',
     'channel': 'Das Erste HD',
+    'do_list': False,
 }
 
 def fatal(msg, failure=None):
@@ -122,6 +123,12 @@ class Channel(object):
         title_len = _getint(buf, 22)
         self.title = buf[24:24+title_len].decode('utf-8')
 
+    def display_string(self):
+        """Returns a unicode display string, since both __repr__ and __str__ convert it
+        to ascii."""
+
+        return u'[%s] % 4s %s' % (self.ch_type, self.dispno, self.title)
+
     def __repr__(self):
         return '<Channel %s %s ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>' % \
             (self.dispno, repr(self.title), self.ch_type, self.major_ch, self.minor_ch, self.ptc,
@@ -197,13 +204,22 @@ def _parse_channel_list(channel_list):
 def got_channel_list(channel_list, cl_type, service):
     """Called when the channel list URL has been retrieved. Parses the channel list, looks
     for a matching channel and calls SetMainTVChannel with the passed cl_type (channel list
-    type). Next: set_channel_returned, passing a list of fallback channel types and everything
+    type), unless opts['do_list'] is true, in which case it just prints the channels and
+    terminates Twisted.
+
+    Next: set_channel_returned, passing a list of fallback channel types and everything
     needed to reproduce the call to SetMainTVChannel for the fallback channel lists."""
 
     try:
         all_channels = _parse_channel_list(channel_list)
     except Exception, e:
         fatal('Unable to parse channel list', e)
+        return
+
+    if opts['do_list']:
+        for channel in all_channels:
+            print channel.display_string()
+        reactor.stop()
         return
 
     matching_channels = [c for c in all_channels if c.title == opts['channel']]
@@ -292,15 +308,17 @@ def start():
 
 
 def main():
-    """Parse options and start twisted.reactor. Next: start()"""
+    """Parse options, set everything up and start twisted.reactor. Next: start()"""
+
     try:
-        gopts, rest_ = getopt.getopt(sys.argv[1:], "l:t:c:", ["loglevel", "devtype", "channel"])
+        gopts, rest_ = getopt.getopt(sys.argv[1:], "L:t:c:l",
+                                     ["loglevel", "devtype", "channel", "list"])
     except getopt.GetoptError as err:
         print str(err)
         sys.exit(1)
 
     for o, a in gopts:
-        if o == '-l':
+        if o == '-L':
             opts['loglevel'] = a
         elif o == '-t':
             opts['devtype'] = a
@@ -311,6 +329,8 @@ def main():
                 # any binary string is valid iso-8859-1, so it *should* never
                 # raise an error
                 opts['channel'] = a.decode('iso-8859-1')
+        elif o == '-l':
+            opts['do_list'] = True
         else:
             sys.stderr.write("Unknown option: %s\n", o)
             sys.exit(1)
