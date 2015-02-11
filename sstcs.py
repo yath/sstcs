@@ -123,8 +123,8 @@ class Channel(object):
         self.title = buf[24:24+title_len].decode('utf-8')
 
     def __repr__(self):
-        return '<Channel %s "%s" ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>' % \
-            (self.dispno, self.title, self.ch_type, self.major_ch, self.minor_ch, self.ptc,
+        return '<Channel %s %s ChType=%s MajorCh=%d MinorCh=%d PTC=%d ProgNum=%d>' % \
+            (self.dispno, repr(self.title), self.ch_type, self.major_ch, self.minor_ch, self.ptc,
              self.prog_num)
 
     def as_xml(self):
