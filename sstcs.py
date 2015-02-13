@@ -97,10 +97,15 @@ class LogFormatter(logging.Formatter):
         formatted_time = '%s,%03d' % (time.strftime("%H:%M:%S", time.localtime(record.created)),
                                       record.msecs)
 
+        try:
+            message = record.message
+        except AttributeError:
+            message = record.getMessage()
+
         return "%s %s %s %s" % (formatted_time,
                                 self._get_padded_text('name', record.name),
                                 colored_loglevel,
-                                record.msg)
+                                message)
 
 
 class ContextException(Exception):
