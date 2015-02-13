@@ -429,13 +429,13 @@ class PyWarningsFilter(logging.Filter):
         # we can't use os.path.realpath as it resolves symlinks, which we
         # do not want, so normalize "as good as possible".
         normalize = lambda path: os.path.normcase(os.path.normpath(path))
-        culprit = normalize(filename)
+        normalized_filename = normalize(filename)
         for modpath in sorted(sys.path, key=lambda e: len(e), reverse=True):
             normalized_modpath = normalize(modpath)+os.path.sep
-            if culprit.startswith(normalized_modpath):
+            if normalized_filename.startswith(normalized_modpath):
                 # we can safely strip at os.path.sep, normpath already replaced
                 # altsep with sep
-                rest = culprit.replace(normalized_modpath, '', 1).split(os.path.sep)
+                rest = normalized_filename.replace(normalized_modpath, '', 1).split(os.path.sep)
                 # strip python extension from filename
                 rest[-1] = (os.path.splitext(rest[-1]))[0]
                 if rest[-1] == '__init__':
