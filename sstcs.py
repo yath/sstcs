@@ -1,7 +1,9 @@
-from struct import unpack
-import getopt
-import sys
+#!/usr/bin/python
 import codecs
+import getopt
+import logging
+from struct import unpack
+import sys
 
 from twisted.internet import reactor
 from twisted.python.failure import Failure
@@ -9,6 +11,8 @@ import twisted.web.client
 
 from coherence.base import Coherence
 from coherence.upnp.devices.control_point import ControlPoint
+import coherence.extern.log.log as coherence_log
+
 from xml.sax.saxutils import escape
 
 # Channel list types to use as fallbacks if designated channel is not in
@@ -17,8 +21,17 @@ from xml.sax.saxutils import escape
 # And it's literally the string, 0xXY.
 CL_TYPE_FALLBACKS = '0x11 0x12 0x13 0x14 0x15 0x03 0x04 0x06 0x01'.split(' ')
 
+# Maps Coherence log levels to 'logging' log levels
+COHERENCE_LOG_LEVEL_MAP = {
+    'ERROR': logging.ERROR,
+    'WARN' : logging.WARNING,
+    'INFO' : logging.INFO,
+    'DEBUG': logging.DEBUG,
+    'LOG'  : logging.DEBUG,
+}
+
 opts = {
-    'loglevel': 'warning',
+    'loglevels': 'warning',
     'devtype' : 'urn:samsung.com:device:MainTVServer2:1',
     'channel': 'Das Erste HD',
     'do_list': False,
@@ -44,7 +57,6 @@ def fatal(msg, failure=None):
 
     if reactor.running:
         reactor.stop()
-
 
 class ContextException(Exception):
     """An Exception class with context attached to it, so a caller can catch a
@@ -302,13 +314,44 @@ def dev_found(device):
 
 def start():
     """Starts up Coherence and sets everything up. Next: dev_found()"""
-    config = {}
-    config['logmode'] = opts['loglevel']
 
-    c = Coherence(config)
+    def _log_handler(level, obj, category, file, line, msg, *args):
+        try:
+            log_level = COHERENCE_LOG_LEVEL_MAP[coherence_log.getLevelName(level)]
+        except KeyError:
+            log_level = 'NOTSET'
+
+        if category == 'coherence':
+            logger_name = 'coherence.main'
+        else:
+            logger_name = 'coherence.%s' % category
+
+        l = logging.getLogger(logger_name)
+        l.log(log_level, msg, *args)
+
+    coherence_log.addLogHandler(_log_handler)
+    try:
+        coherence_log.removeLimitedLogHandler(coherence_log.stderrHandler)
+    except ValueError:
+        pass
+
+    c = Coherence({'logmode': 'none'})
     cp = ControlPoint(c, auto_client=[])
     cp.connect(dev_found, 'Coherence.UPnP.RootDevice.detection_completed')
 
+def set_up_logging(levels_string):
+    """Sets up logging and configures the log levels according to levels_string."""
+
+    logging.basicConfig()
+
+    for level_string in levels_string.split(','):
+        try:
+            logger_name, level = level_string.split('=')
+            logger = logging.getLogger(logger_name)
+        except ValueError:
+            logger = logging.getLogger()  # root logger
+            level = level_string
+        logger.setLevel(level.upper())
 
 def main():
     """Parse options, set everything up and start twisted.reactor. Next: start()"""
@@ -318,14 +361,14 @@ def main():
 
     try:
         gopts, rest_ = getopt.getopt(sys.argv[1:], "L:t:c:l",
-                                     ["loglevel", "devtype", "channel", "list"])
+                                     ["loglevels", "devtype", "channel", "list"])
     except getopt.GetoptError as err:
         print str(err)
         sys.exit(1)
 
     for o, a in gopts:
         if o == '-L':
-            opts['loglevel'] = a
+            opts['loglevels'] = a
         elif o == '-t':
             opts['devtype'] = a
         elif o == '-c':
@@ -340,6 +383,8 @@ def main():
         else:
             sys.stderr.write("Unknown option: %s\n", o)
             sys.exit(1)
+
+    set_up_logging(opts['loglevels'])
 
     reactor.callWhenRunning(start)
     reactor.run()
