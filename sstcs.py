@@ -48,9 +48,12 @@ except ImportError:
     LOG_LEVEL_COLORS = {}
     LOG_LEVEL_COLOR_RESET = ''
 
+# Global Logger for sstcs. Will be set in set_up_logging.
+LOG = None
+
 # Default options
 opts = {
-    'loglevels': 'warning',
+    'loglevels': 'info,coherence=critical',
     'devtype' : 'urn:samsung.com:device:MainTVServer2:1',
     'channel': 'Das Erste HD',
     'do_list': False,
@@ -218,15 +221,15 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
             fatal('TV doesn\'t know how to switch to %s' % channel)
             return
 
-        print "channel %s not in current channel list, trying with %s" % \
-            (channel, cl_type)
+        LOG.warning("channel %s not in current channel list, trying with %s",
+                    channel, cl_type)
         set_main_tv_channel.call(ChannelListType=cl_type,
                                  SatelliteID=0,
                                  Channel=channel.as_xml()).\
                         addCallback(set_channel_returned, set_main_tv_channel,
                                     cl_type_fallbacks, channel)
     elif result['Result'] == 'OK':
-        print "Channel switched."
+        LOG.info('Channel switched.')
         reactor.stop()
         return
     else:
@@ -294,10 +297,10 @@ def got_channel_list(channel_list, cl_type, service):
         return
 
     if len(matching_channels) > 1:
-        print "More than one matching channel found (%s), picking first" % matching_channels
+        logging.info("More than one matching channel found (%s), picking first", matching_channels)
     channel = matching_channels[0]
 
-    print "Found channel: %s" % channel
+    LOG.debug("Found channel: %s", channel)
 
     set_main_tv_channel = service.get_action('SetMainTVChannel')
     if not set_main_tv_channel:
@@ -305,7 +308,7 @@ def got_channel_list(channel_list, cl_type, service):
         fatal('Can\'t resolve SetMainTVChannel on TV, that\'s usually intermittent.')
         return
 
-    print "cl_type %s, channel as_xml %s" % (cl_type, channel.as_xml())
+    LOG.debug("cl_type %s, channel as_xml %s", cl_type, channel.as_xml())
 
     set_main_tv_channel.call(ChannelListType=cl_type, SatelliteID=0, Channel=channel.as_xml()).\
         addCallback(set_channel_returned, set_main_tv_channel, CL_TYPE_FALLBACKS[:], channel).\
@@ -316,7 +319,7 @@ def got_channel_list_url(results, service):
     """Called when GetChannelListURL returns. Gets the URL referenced from the channel list and
     the channel list type. Next: got_channel_list(channel_list_type)."""
 
-    print "got_channel_list_url: %s" % results
+    LOG.debug("got_channel_list_url: %s", results)
     # A string, like 0x12
     cl_type = results['ChannelListType']
 
@@ -404,6 +407,9 @@ def set_up_logging(levels_string):
             logger = logging.getLogger()  # root logger
             level = level_string
         logger.setLevel(level.upper())
+
+    global LOG
+    LOG = logging.getLogger('sstcs')
 
 def main():
     """Parse options, set everything up and start twisted.reactor. Next: start()"""
