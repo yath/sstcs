@@ -124,11 +124,12 @@ class LogFormatter(logging.Formatter):
         # which we can use as name.
         if name == 'py.warnings' and hasattr(record, 'real_module'):
             name = record.real_module
+        padded_name = self._get_padded_text('name', name)
+        return '\n'.join("%s %s %s %s" % (formatted_time,
+                                          padded_name,
+                                          colored_loglevel,
+                                          line) for line in message.split('\n'))
 
-        return  "%s %s %s %s" % (formatted_time,
-                                 self._get_padded_text('name', name),
-                                 colored_loglevel,
-                                 message)
 
 
 class ContextException(Exception):
