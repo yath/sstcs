@@ -57,9 +57,9 @@ EXITCODE = 0
 # Default options
 opts = {
     'loglevels': 'info,coherence=critical',
-    'devtype' : 'urn:samsung.com:device:MainTVServer2:1',
-    'channel': 'Das Erste HD',
-    'do_list': False,
+    'devtype'  : 'urn:samsung.com:device:MainTVServer2:1',
+    'channel'  : 'Das Erste HD',
+    'do_list'  : False,
 }
 
 def fatal(msg, failure=None):
