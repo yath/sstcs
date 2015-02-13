@@ -4,6 +4,7 @@ import getopt
 import logging
 from struct import unpack
 import sys
+import time
 
 from twisted.internet import reactor
 from twisted.python.failure import Failure
@@ -11,6 +12,7 @@ import twisted.web.client
 
 from coherence.base import Coherence
 from coherence.upnp.devices.control_point import ControlPoint
+
 import coherence.extern.log.log as coherence_log
 
 from xml.sax.saxutils import escape
@@ -30,6 +32,23 @@ COHERENCE_LOG_LEVEL_MAP = {
     'LOG'  : logging.DEBUG,
 }
 
+# Log levels to colors.
+try:
+    from coherence.extern.log import termcolor
+    t = termcolor.TerminalController()
+    LOG_LEVEL_COLORS = {
+        logging.CRITICAL: t.BOLD+t.MAGENTA,
+        logging.ERROR   : t.BOLD+t.RED,
+        logging.WARNING : t.BOLD+t.YELLOW,
+        logging.INFO    : t.BOLD+t.GREEN,
+        logging.DEBUG   : t.BOLD+t.BLUE,
+    }
+    LOG_LEVEL_COLOR_RESET = t.NORMAL
+except ImportError:
+    LOG_LEVEL_COLORS = {}
+    LOG_LEVEL_COLOR_RESET = ''
+
+# Default options
 opts = {
     'loglevels': 'warning',
     'devtype' : 'urn:samsung.com:device:MainTVServer2:1',
@@ -57,6 +76,32 @@ def fatal(msg, failure=None):
 
     if reactor.running:
         reactor.stop()
+
+class LogFormatter(logging.Formatter):
+    """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
+
+    def __init__(self, initial_widths={}):
+        self.widths = initial_widths.copy()
+        super(LogFormatter, self).__init__()
+
+    def _get_padded_text(self, what, text):
+        width = self.widths.get(what, 0)
+        if len(text) > width:
+            self.widths[what] = width = len(text)
+        return '{text:{width}s}'.format(text=text, width=width)
+
+    def format(self, record):
+        colored_loglevel = (LOG_LEVEL_COLORS.get(record.levelno, '') +
+                            self._get_padded_text('levelname', record.levelname) +
+                            LOG_LEVEL_COLOR_RESET)
+        formatted_time = '%s,%03d' % (time.strftime("%H:%M:%S", time.localtime(record.created)),
+                                      record.msecs)
+
+        return "%s %s %s %s" % (formatted_time,
+                                self._get_padded_text('name', record.name),
+                                colored_loglevel,
+                                record.msg)
+
 
 class ContextException(Exception):
     """An Exception class with context attached to it, so a caller can catch a
@@ -342,7 +387,9 @@ def start():
 def set_up_logging(levels_string):
     """Sets up logging and configures the log levels according to levels_string."""
 
-    logging.basicConfig()
+    sh = logging.StreamHandler()
+    sh.setFormatter(LogFormatter())
+    logging.getLogger().addHandler(sh)
 
     for level_string in levels_string.split(','):
         try:
