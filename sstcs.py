@@ -73,9 +73,14 @@ def fatal(msg, failure=None):
     if isinstance(failure, Failure):
         failure = failure.value
 
-    sys.stderr.write("FATAL ERROR: %s\n" % msg)
+    log_str = 'FATAL ERROR: %s' % msg
     if failure:
-        sys.stderr.write("Additional information:\n%s\n" % str(failure))
+        log_str += '\nAdditional information:\n%s' % str(failure)
+
+    if LOG:
+        LOG.critical(log_str)
+    else:
+        sys.stderr.write(log_str + '\n')
 
     if reactor.running:
         reactor.stop()
