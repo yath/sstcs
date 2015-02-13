@@ -51,6 +51,9 @@ except ImportError:
 # Global Logger for sstcs. Will be set in set_up_logging.
 LOG = None
 
+# Code to exit with at the end of the program
+EXITCODE = 0
+
 # Default options
 opts = {
     'loglevels': 'info,coherence=critical',
@@ -84,6 +87,9 @@ def fatal(msg, failure=None):
 
     if reactor.running:
         reactor.stop()
+
+    global EXITCODE
+    EXITCODE = 2
 
 class LogFormatter(logging.Formatter):
     """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
@@ -454,3 +460,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+sys.exit(EXITCODE)
