@@ -262,8 +262,7 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
         reactor.stop()
         return
     else:
-        fatal('TV reported back result %s, no idea what that is.', result)
-        reactor.stop()
+        fatal('TV reported back result %s, no idea what that is.' % result)
         return
 
 
