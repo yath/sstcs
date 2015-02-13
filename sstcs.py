@@ -58,7 +58,7 @@ EXITCODE = 0
 opts = {
     'loglevels': 'info,coherence=critical',
     'devtype'  : 'urn:samsung.com:device:MainTVServer2:1',
-    'channel'  : 'Das Erste HD',
+    'channel'  : None,
     'do_list'  : False,
 }
 
@@ -450,8 +450,12 @@ def main():
         elif o in ['-l', '--list']:
             opts['do_list'] = True
         else:
-            sys.stderr.write("Unknown option: %s\n" % o)
-            sys.exit(1)
+            fatal('Unknown option: %s', o)
+            return
+
+    if not opts['channel'] and not opts['do_list']:
+        fatal('Either -c or -l must be specified.')
+        return
 
     set_up_logging(opts['loglevels'])
 
