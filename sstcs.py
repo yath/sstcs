@@ -430,27 +430,27 @@ def main():
 
     try:
         gopts, rest_ = getopt.getopt(sys.argv[1:], "L:t:c:l",
-                                     ["loglevels", "devtype", "channel", "list"])
+                                     ["loglevels=", "devtype=", "channel=", "list"])
     except getopt.GetoptError as err:
         print str(err)
         sys.exit(1)
 
     for o, a in gopts:
-        if o == '-L':
+        if o in ['-L', '--loglevels']:
             opts['loglevels'] += ','+a
-        elif o == '-t':
+        elif o in ['-t', '--devtype']:
             opts['devtype'] = a
-        elif o == '-c':
+        elif o in ['-c', '--channel']:
             try:
                 opts['channel'] = a.decode('utf-8')
             except UnicodeDecodeError:
                 # any binary string is valid iso-8859-1, so it *should* never
                 # raise an error
                 opts['channel'] = a.decode('iso-8859-1')
-        elif o == '-l':
+        elif o in ['-l', '--list']:
             opts['do_list'] = True
         else:
-            sys.stderr.write("Unknown option: %s\n", o)
+            sys.stderr.write("Unknown option: %s\n" % o)
             sys.exit(1)
 
     set_up_logging(opts['loglevels'])
