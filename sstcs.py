@@ -2,6 +2,7 @@
 import codecs
 import getopt
 import logging
+import os
 from struct import unpack
 import sys
 import time
@@ -91,11 +92,25 @@ def fatal(msg, failure=None):
     global EXITCODE
     EXITCODE = 2
 
+class SkippableStreamHandler(logging.StreamHandler):
+    """A SkippableStreamHandler is a normal StreamHandler with the difference that
+    if the handler's formatter returns None, StreamHandler's emit() isn't invoked
+    at all."""
+
+    def emit(self, record):
+        formatted = self.format(record)
+        if formatted:
+            super(SkippableStreamHandler, self).emit(record)
+
 class LogFormatter(logging.Formatter):
     """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
 
     def __init__(self, initial_widths={}):
-        self.widths = initial_widths.copy()
+        self.widths             = initial_widths.copy()
+        self.module_names_cache = {}    # cache for _module_name_from_filename
+        self.last_record        = None  # cache for format()'s last result
+        self.last_formatted     = None
+
         super(LogFormatter, self).__init__()
 
     def _get_padded_text(self, what, text):
@@ -104,7 +119,37 @@ class LogFormatter(logging.Formatter):
             self.widths[what] = width = len(text)
         return '{text:{width}s}'.format(text=text, width=width)
 
+    def _module_name_from_filename(self, filename):
+        try:
+            return self.module_names_cache[filename]
+        except KeyError:
+            pass
+
+        # we can't use os.path.realpath as it resolves symlinks, which we
+        # do not want, so normalize "as good as possible".
+        normalize = lambda path: os.path.normcase(os.path.normpath(path))
+        culprit = normalize(filename)
+        for modpath in sorted(sys.path, key=lambda e: len(e), reverse=True):
+            normalized_modpath = normalize(modpath)+os.path.sep
+            if culprit.startswith(normalized_modpath):
+                # we can safely strip at os.path.sep, normpath already replaced
+                # altsep with sep
+                rest = culprit.replace(normalized_modpath, '', 1).split(os.path.sep)
+                # strip python extension from filename
+                rest[-1] = (os.path.splitext(rest[-1]))[0]
+                if rest[-1] == '__init__':
+                    rest.pop()  # drop __init__
+                module_name = self.module_names_cache[filename] = '.'.join(rest)
+                return module_name
+
+        self.module_names_cache[filename] = None
+        return None
+
     def format(self, record):
+        if self.last_record == id(record):
+            return self.last_formatted
+        self.last_record = id(record)
+
         colored_loglevel = (LOG_LEVEL_COLORS.get(record.levelno, '') +
                             self._get_padded_text('levelname', record.levelname) +
                             LOG_LEVEL_COLOR_RESET)
@@ -116,10 +161,29 @@ class LogFormatter(logging.Formatter):
         except AttributeError:
             message = record.getMessage()
 
-        return "%s %s %s %s" % (formatted_time,
-                                self._get_padded_text('name', record.name),
-                                colored_loglevel,
-                                message)
+        name = record.name
+
+        # If we are actually a warning triggered by the warnings module, try to find out who
+        # caused that warning (by guessing the module name from the file name :(, as record.module
+        # only contains the last part), get "their" logger, check if we should log at their
+        # log level and if not, return None which causes the SkippableStreamHandler to skip this
+        # record.
+        if name == 'py.warnings':
+            culprit = self._module_name_from_filename(record.pathname)
+            if culprit:
+                # Return None if we should not log at all
+                if not logging.getLogger(culprit).isEnabledFor(record.levelno):
+                    self.last_formatted = None
+                    return self.last_formatted
+                else:
+                    # At least treat the warning as if it came like from the culprit
+                    name = culprit
+
+        self.last_formatted = "%s %s %s %s" % (formatted_time,
+                                               self._get_padded_text('name', name),
+                                               colored_loglevel,
+                                               message)
+        return self.last_formatted
 
 
 class ContextException(Exception):
@@ -406,9 +470,10 @@ def start():
 def set_up_logging(levels_string):
     """Sets up logging and configures the log levels according to levels_string."""
 
-    sh = logging.StreamHandler()
-    sh.setFormatter(LogFormatter())
-    logging.getLogger().addHandler(sh)
+    ssh = SkippableStreamHandler()
+    ssh.setFormatter(LogFormatter())
+    logging.getLogger().addHandler(ssh)
+    logging.captureWarnings(True)
 
     for level_string in levels_string.split(','):
         try:
