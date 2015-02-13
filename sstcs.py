@@ -92,16 +92,6 @@ def fatal(msg, failure=None):
     global EXITCODE
     EXITCODE = 2
 
-class SkippableStreamHandler(logging.StreamHandler):
-    """A SkippableStreamHandler is a normal StreamHandler with the difference that
-    if the handler's formatter returns None, StreamHandler's emit() isn't invoked
-    at all."""
-
-    def emit(self, record):
-        formatted = self.format(record)
-        if formatted:
-            super(SkippableStreamHandler, self).emit(record)
-
 class LogFormatter(logging.Formatter):
     """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
 
@@ -119,31 +109,6 @@ class LogFormatter(logging.Formatter):
             self.widths[what] = width = len(text)
         return '{text:{width}s}'.format(text=text, width=width)
 
-    def _module_name_from_filename(self, filename):
-        try:
-            return self.module_names_cache[filename]
-        except KeyError:
-            pass
-
-        # we can't use os.path.realpath as it resolves symlinks, which we
-        # do not want, so normalize "as good as possible".
-        normalize = lambda path: os.path.normcase(os.path.normpath(path))
-        culprit = normalize(filename)
-        for modpath in sorted(sys.path, key=lambda e: len(e), reverse=True):
-            normalized_modpath = normalize(modpath)+os.path.sep
-            if culprit.startswith(normalized_modpath):
-                # we can safely strip at os.path.sep, normpath already replaced
-                # altsep with sep
-                rest = culprit.replace(normalized_modpath, '', 1).split(os.path.sep)
-                # strip python extension from filename
-                rest[-1] = (os.path.splitext(rest[-1]))[0]
-                if rest[-1] == '__init__':
-                    rest.pop()  # drop __init__
-                module_name = self.module_names_cache[filename] = '.'.join(rest)
-                return module_name
-
-        self.module_names_cache[filename] = None
-        return None
 
     def format(self, record):
         if self.last_record == id(record):
@@ -163,21 +128,10 @@ class LogFormatter(logging.Formatter):
 
         name = record.name
 
-        # If we are actually a warning triggered by the warnings module, try to find out who
-        # caused that warning (by guessing the module name from the file name :(, as record.module
-        # only contains the last part), get "their" logger, check if we should log at their
-        # log level and if not, return None which causes the SkippableStreamHandler to skip this
-        # record.
-        if name == 'py.warnings':
-            culprit = self._module_name_from_filename(record.pathname)
-            if culprit:
-                # Return None if we should not log at all
-                if not logging.getLogger(culprit).isEnabledFor(record.levelno):
-                    self.last_formatted = None
-                    return self.last_formatted
-                else:
-                    # At least treat the warning as if it came like from the culprit
-                    name = culprit
+        # If it's a warning, PyWarningsFilter has probably set real_module
+        # which we can use as name.
+        if name == 'py.warnings' and hasattr(record, 'real_module'):
+            name = record.real_module
 
         self.last_formatted = "%s %s %s %s" % (formatted_time,
                                                self._get_padded_text('name', name),
@@ -467,12 +421,56 @@ def start():
     cp = ControlPoint(c, auto_client=[])
     cp.connect(dev_found, 'Coherence.UPnP.RootDevice.detection_completed')
 
+class PyWarningsFilter(logging.Filter):
+    """A filter for py.warnings which resolves the cause (module) of the
+    warning and checks their logger whether we should log."""
+
+    def __init__(self, *args, **kwargs):
+        self.module_names_cache = {}
+        super(PyWarningsFilter, self).__init__(*args, **kwargs)
+
+    def _module_name_from_filename(self, filename):
+        try:
+            return self.module_names_cache[filename]
+        except KeyError:
+            pass
+
+        # we can't use os.path.realpath as it resolves symlinks, which we
+        # do not want, so normalize "as good as possible".
+        normalize = lambda path: os.path.normcase(os.path.normpath(path))
+        culprit = normalize(filename)
+        for modpath in sorted(sys.path, key=lambda e: len(e), reverse=True):
+            normalized_modpath = normalize(modpath)+os.path.sep
+            if culprit.startswith(normalized_modpath):
+                # we can safely strip at os.path.sep, normpath already replaced
+                # altsep with sep
+                rest = culprit.replace(normalized_modpath, '', 1).split(os.path.sep)
+                # strip python extension from filename
+                rest[-1] = (os.path.splitext(rest[-1]))[0]
+                if rest[-1] == '__init__':
+                    rest.pop()  # drop __init__
+                module_name = self.module_names_cache[filename] = '.'.join(rest)
+                return module_name
+
+        self.module_names_cache[filename] = None
+        return None
+
+    def filter(self, record):
+        assert record.name == 'py.warnings'
+
+        if not hasattr(record, 'real_module'):
+            record.real_module = self._module_name_from_filename(record.pathname)
+
+        return logging.getLogger(record.real_module).isEnabledFor(record.levelno)
+
 def set_up_logging(levels_string):
     """Sets up logging and configures the log levels according to levels_string."""
 
-    ssh = SkippableStreamHandler()
-    ssh.setFormatter(LogFormatter())
-    logging.getLogger().addHandler(ssh)
+    sh = logging.StreamHandler()
+    sh.setFormatter(LogFormatter())
+    logging.getLogger().addHandler(sh)
+
+    logging.getLogger('py.warnings').addFilter(PyWarningsFilter())
     logging.captureWarnings(True)
 
     for level_string in levels_string.split(','):
