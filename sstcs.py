@@ -426,7 +426,7 @@ def main():
 
     for o, a in gopts:
         if o == '-L':
-            opts['loglevels'] = a
+            opts['loglevels'] += ','+a
         elif o == '-t':
             opts['devtype'] = a
         elif o == '-c':
