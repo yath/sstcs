@@ -96,11 +96,7 @@ class LogFormatter(logging.Formatter):
     """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
 
     def __init__(self, initial_widths={}):
-        self.widths             = initial_widths.copy()
-        self.module_names_cache = {}    # cache for _module_name_from_filename
-        self.last_record        = None  # cache for format()'s last result
-        self.last_formatted     = None
-
+        self.widths = initial_widths.copy()
         super(LogFormatter, self).__init__()
 
     def _get_padded_text(self, what, text):
@@ -111,10 +107,6 @@ class LogFormatter(logging.Formatter):
 
 
     def format(self, record):
-        if self.last_record == id(record):
-            return self.last_formatted
-        self.last_record = id(record)
-
         colored_loglevel = (LOG_LEVEL_COLORS.get(record.levelno, '') +
                             self._get_padded_text('levelname', record.levelname) +
                             LOG_LEVEL_COLOR_RESET)
@@ -133,11 +125,10 @@ class LogFormatter(logging.Formatter):
         if name == 'py.warnings' and hasattr(record, 'real_module'):
             name = record.real_module
 
-        self.last_formatted = "%s %s %s %s" % (formatted_time,
-                                               self._get_padded_text('name', name),
-                                               colored_loglevel,
-                                               message)
-        return self.last_formatted
+        return  "%s %s %s %s" % (formatted_time,
+                                 self._get_padded_text('name', name),
+                                 colored_loglevel,
+                                 message)
 
 
 class ContextException(Exception):
