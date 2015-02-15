@@ -324,7 +324,8 @@ def got_channel_list(channel_list, cl_type, service):
 
     if len(matching_channels) > 1:
         logging.info("More than one matching channel found (%s), picking first", matching_channels)
-    channel_xml = matching_channels[0].as_xml()
+    channel     = matching_channels[0]
+    channel_xml = channel.as_xml()
 
     set_main_tv_channel = service.get_action('SetMainTVChannel')
     if not set_main_tv_channel:
