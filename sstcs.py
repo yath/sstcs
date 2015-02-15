@@ -235,6 +235,9 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
     as callback the next channel type list from cl_type_fallbacks. Or, just tells the
     user whether the TV succeeded in switching the channel or returned an error."""
 
+    LOG.debug('set_channel_returned: result=%r, fallbacks=%r, channel=%r', result,
+        cl_type_fallbacks, channel)
+
     if result['Result'] == 'NOTOK_InvalidCh':
         try:
             cl_type = cl_type_fallbacks.pop(0)
@@ -286,6 +289,8 @@ def _parse_channel_list(channel_list):
             raise pe
 
         pos += 124
+
+    LOG.debug('Parsed %d channels', len(channels))
     return channels
 
 
@@ -298,6 +303,7 @@ def got_channel_list(channel_list, cl_type, service):
     Next: set_channel_returned, passing a list of fallback channel types and everything
     needed to reproduce the call to SetMainTVChannel for the fallback channel lists."""
 
+    LOG.debug('got_channel_list: fetched %d bytes', len(channel_list))
     try:
         all_channels = _parse_channel_list(channel_list)
     except Exception, e:
@@ -318,9 +324,7 @@ def got_channel_list(channel_list, cl_type, service):
 
     if len(matching_channels) > 1:
         logging.info("More than one matching channel found (%s), picking first", matching_channels)
-    channel = matching_channels[0]
-
-    LOG.debug("Found channel: %s", channel)
+    channel_xml = matching_channels[0].as_xml()
 
     set_main_tv_channel = service.get_action('SetMainTVChannel')
     if not set_main_tv_channel:
@@ -328,9 +332,10 @@ def got_channel_list(channel_list, cl_type, service):
         fatal('Can\'t resolve SetMainTVChannel on TV, that\'s usually intermittent.')
         return
 
-    LOG.debug("cl_type %s, channel as_xml %s", cl_type, channel.as_xml())
+    LOG.debug('Calling SetMainTVChannel(ChannelListType=%r, SatelliteID=0, Channel=%r)',
+        cl_type, channel_xml)
 
-    set_main_tv_channel.call(ChannelListType=cl_type, SatelliteID=0, Channel=channel.as_xml()).\
+    set_main_tv_channel.call(ChannelListType=cl_type, SatelliteID=0, Channel=channel_xml).\
         addCallback(set_channel_returned, set_main_tv_channel, CL_TYPE_FALLBACKS[:], channel).\
         addErrback(fatal)
 
@@ -339,12 +344,14 @@ def got_channel_list_url(results, service):
     """Called when GetChannelListURL returns. Gets the URL referenced from the channel list and
     the channel list type. Next: got_channel_list(channel_list_type)."""
 
-    LOG.debug("got_channel_list_url: %s", results)
-    # A string, like 0x12
-    cl_type = results['ChannelListType']
+    LOG.debug('got_channel_list_url: %r', results)
 
-    twisted.web.client.getPage(results['ChannelListURL']).\
-        addCallback(got_channel_list, cl_type, service).\
+    cl_type = results['ChannelListType']
+    url     = results['ChannelListURL']
+
+    LOG.debug('Current cl_type is %s, URL is %s. Fetching URL.',
+        cl_type, url)
+    twisted.web.client.getPage(url).addCallback(got_channel_list, cl_type, service).\
         addErrback(fatal)
 
 
@@ -352,6 +359,7 @@ def dev_found(device):
     """Called when a device was found and calls GetChannelListURL if the device matches and has
     the appropriate service. Next: got_channel_list_url(service)."""
 
+    LOG.debug('Discovered device %r', device)
     if opts['devtype']:
         if device.get_device_type() != opts['devtype']:
             return
@@ -367,6 +375,7 @@ def dev_found(device):
         return
 
     svc = services[0]
+    LOG.debug('Found matching service %r', svc)
 
     get_channel_list_url = svc.get_action('GetChannelListURL')
     if not get_channel_list_url:
@@ -381,6 +390,7 @@ def dev_found(device):
     # state variables to updates).
     get_channel_list_url.arguments_list = get_channel_list_url.get_in_arguments()
 
+    LOG.debug('Calling GetChannelListURL')
     get_channel_list_url.call().addCallback(got_channel_list_url, svc).\
         addErrback(fatal)
 
@@ -410,6 +420,7 @@ def start():
 
     c = Coherence({'logmode': 'none'})
     cp = ControlPoint(c, auto_client=[])
+    LOG.debug('Coherence initialized, waiting for devices to be discovered...')
     cp.connect(dev_found, 'Coherence.UPnP.RootDevice.detection_completed')
 
 class PyWarningsFilter(logging.Filter):
