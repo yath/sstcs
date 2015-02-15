@@ -433,7 +433,7 @@ def got_channel_list_url(results, service):
         addErrback(fatal)
 
 
-def dev_found(device):
+def dev_found(retrier, device):
     """Called when a device was found and calls GetChannelListURL if the device matches and has
     the appropriate service. Next: got_channel_list_url(service)."""
 
@@ -454,6 +454,7 @@ def dev_found(device):
 
     svc = services[0]
     LOG.debug('Found matching service %r', svc)
+    retrier.cancel()
 
     get_channel_list_url = svc.get_action('GetChannelListURL')
     if not get_channel_list_url:
@@ -471,7 +472,6 @@ def dev_found(device):
     LOG.debug('Calling GetChannelListURL')
     get_channel_list_url.call().addCallback(got_channel_list_url, svc).\
         addErrback(fatal)
-
 
 def start():
     """Starts up Coherence and sets everything up. Next: dev_found()"""
@@ -496,10 +496,24 @@ def start():
     except ValueError:
         pass
 
-    c = Coherence({'logmode': 'none'})
-    cp = ControlPoint(c, auto_client=[])
+    coherence = Coherence({'logmode': 'none'})
+    control_point = ControlPoint(coherence, auto_client=[])
+
     LOG.debug('Coherence initialized, waiting for devices to be discovered...')
-    cp.connect(dev_found, 'Coherence.UPnP.RootDevice.detection_completed')
+
+    def _retry(retrier, handler):
+        LOG.debug('TV not yet discovered, retrying discovery...')
+        coherence.msearch.double_discover()
+        reactor.callLater(retrier.next_call_s, handler)
+    def _give_up(retrier):
+        fatal('Did not discover TV after %.1f seconds' % retrier.elapsed_s)
+
+    retrier = Retrier(_retry, _give_up, DEFAULT_RETRY_SPEC)
+    reactor.callLater(retrier.next_call_s, retrier.retrier)
+
+    def _dev_found(device):
+        dev_found(retrier, device)
+    control_point.connect(_dev_found, 'Coherence.UPnP.RootDevice.detection_completed')
 
 class PyWarningsFilter(logging.Filter):
     """A filter for py.warnings which resolves the cause (module) of the
