@@ -221,6 +221,7 @@ class Channel(object):
             (self.dispno, repr(self.title), self.ch_type, self.major_ch, self.minor_ch, self.ptc,
              self.prog_num)
 
+    @property
     def as_xml(self):
         """The channel list as XML representation for SetMainTVChannel."""
 
@@ -249,7 +250,7 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
                     channel, cl_type)
         set_main_tv_channel.call(ChannelListType=cl_type,
                                  SatelliteID=0,
-                                 Channel=channel.as_xml()).\
+                                 Channel=channel.as_xml).\
                         addCallback(set_channel_returned, set_main_tv_channel,
                                     cl_type_fallbacks, channel)
     elif result['Result'] == 'OK':
@@ -325,7 +326,7 @@ def got_channel_list(channel_list, cl_type, service):
     if len(matching_channels) > 1:
         logging.info("More than one matching channel found (%s), picking first", matching_channels)
     channel     = matching_channels[0]
-    channel_xml = channel.as_xml()
+    channel_xml = channel.as_xml
 
     set_main_tv_channel = service.get_action('SetMainTVChannel')
     if not set_main_tv_channel:
