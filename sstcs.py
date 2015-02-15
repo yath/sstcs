@@ -1,5 +1,7 @@
 #!/usr/bin/python
 import codecs
+import collections
+from datetime import datetime
 import getopt
 import logging
 import os
@@ -91,6 +93,80 @@ def fatal(msg, failure=None):
 
     global EXITCODE
     EXITCODE = 2
+
+
+RetrySpec = collections.namedtuple('RetrySpec', ['retries', 'initial_delay_s',
+                                                 'backoff_factor'])
+DEFAULT_RETRY_SPEC = RetrySpec(retries=10, initial_delay_s=0.5, backoff_factor=1.5)
+
+
+class Retrier(object):
+    """A Retrier is a class encapsulating generic retry logic. Users can set handlers
+    to be called for retrying and aborting and cancel the retrier."""
+
+    def __init__(self, retry_handler, timeout_handler, retry_spec):
+        """Initialize the Retrier.
+
+        Args:
+            retry_handler: Handler to be called with (retrier, handler) when the RetrySpec's
+                           timeout elapses. Shall schedule a call to 'handler' after
+                           retrier.next_call_s seconds.
+            timeout_handler: The handler to call with the Retrier as an argument when the
+                             maximum number of retries have been reached.
+            retry_spec: A RetrySpec specifying how and when to call retry_handler."""
+
+        self._retry_handler   = retry_handler
+        self._timeout_handler = timeout_handler
+        self._retry_spec      = retry_spec
+
+        self._next_call_s     = retry_spec.initial_delay_s
+        self._remaining_tries = retry_spec.retries
+
+        self._cancelled       = False
+        self._started         = datetime.now()
+
+    @property
+    def next_call_s(self):
+        """Return the number of seconds when the next call to the retry handler is due."""
+
+        return self._next_call_s
+
+    @property
+    def remaining_tries(self):
+        """Return the number of remaining tries."""
+
+        return self._remaining_tries
+
+    @property
+    def elapsed_s(self):
+        """Returns the number of elapsed seconds since creation of this Retrier."""
+
+        delta = datetime.now() - self._started
+        return delta.seconds + (delta.microseconds / 1000000)
+
+    def cancel(self):
+        """Cancels calling the retry_handler again."""
+
+        self._cancelled = True
+
+    @property
+    def retrier(self):
+        """Returns a function to be called without arguments after self.next_call_s seconds."""
+
+        def _retrier():
+            if self._cancelled:
+                return
+
+            if self._remaining_tries == 0:
+                self._timeout_handler(retrier=self)
+            else:
+                retrier = self
+                handler = _retrier
+                self._retry_handler(retrier, handler)
+
+                self._remaining_tries -= 1
+                self._next_call_s     *= self._retry_spec.backoff_factor
+        return _retrier
 
 class LogFormatter(logging.Formatter):
     """Formatter for sstcs' log. Colors the log level and auto-grows columns."""
