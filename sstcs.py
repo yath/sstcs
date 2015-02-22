@@ -233,6 +233,12 @@ class ParseException(ContextException):
     pass
 
 
+def _getint(buf, offset):
+    """Helper function to extract a 16-bit little-endian unsigned from a char
+    buffer 'buf' at offset 'offset'..'offset'+2."""
+    x = unpack('<H', buf[offset:offset+2])
+    return x[0]
+
 class Channel(object):
     """Class representing a Channel from the TV's channel list."""
 
@@ -259,11 +265,6 @@ class Channel(object):
         #                               that's displayed (and which you can enter), in ASCII
         #   [2 bytes int] Length of the channel title
         #   [106 bytes string, \0-padded] The channel title, in UTF-8 (wow)
-
-        def _getint(buf, offset):
-            # numbers are 16-bit little-endian unsigned
-            x = unpack('<H', buf[offset:offset+2])
-            return x[0]
 
         t = _getint(buf, 0)
         if t == 4:
@@ -341,22 +342,31 @@ def set_channel_returned(result, set_main_tv_channel, cl_type_fallbacks, channel
 def _parse_channel_list(channel_list):
     """Splits the binary channel list into channel entry fields and returns a list of Channels."""
 
-    # The channel list is binary file with a 128-byte header (ignored)
-    # and 124-byte chunks for each channel. See Channel._parse_dat for
-    # how each entry is constructed.
+    # The channel list is binary file with a 4-byte header, containing 2 unknown bytes and
+    # 2 bytes for the channel count, which must be len(list)-4/124, as each following channel
+    # is 124 bytes each. See Channel._parse_dat for how each entry is constructed.
 
-    if len(channel_list) < 252:
-        raise ParseException(('channel list is smaller than it has to be for at least'\
-                              'one channel (%d bytes (actual) vs. 252 bytes' % len(channel_list)),
+    if len(channel_list) < 128:
+        raise ParseException(('channel list is smaller than it has to be for at least '\
+                              'one channel (%d bytes (actual) vs. 128 bytes' % len(channel_list)),
                              ('Channel list: %s' % repr(channel_list)))
 
-    if (len(channel_list)-128) % 124 != 0:
-        raise ParseException(('channel list\'s size (%d) minus 128 (header) is not a multiple of'\
+
+    if (len(channel_list)-4) % 124 != 0:
+        raise ParseException(('channel list\'s size (%d) minus 128 (header) is not a multiple of '\
                               '124 bytes' % len(channel_list)),
                              ('Channel list: %s' % repr(channel_list)))
 
+    actual_channel_list_len = (len(channel_list)-4) / 124
+    expected_channel_list_len = _getint(channel_list, 2)
+    if actual_channel_list_len != expected_channel_list_len:
+        raise ParseException(('Actual channel list length ((%d-4)/124=%d) does not equal expected '\
+                              'channel list length (%d) as defined in header' % (len(channel_list),
+                              actual_channel_list_len, expected_channel_list_len))
+                             ('Channel list: %s' % repr(channel_list)))
+
     channels = []
-    pos = 128
+    pos = 4
     while pos < len(channel_list):
         chunk = channel_list[pos:pos+124]
         try:
