@@ -5,6 +5,7 @@ from datetime import datetime
 import getopt
 import logging
 import os
+import re
 from struct import unpack
 import sys
 import time
@@ -403,7 +404,12 @@ def got_channel_list(channel_list, cl_type, service):
         reactor.stop()
         return
 
-    matching_channels = [c for c in all_channels if c.title == opts['channel']]
+    re_match = re.match(r'(C[AD]TV)\s*(\d+)', opts['channel'])
+    if re_match:
+        cmp_fn = lambda c: c.ch_type == re_match.group(1) and c.dispno.strip() == re_match.group(2)
+    else:
+        cmp_fn = lambda c: c.title == opts['channel']
+    matching_channels = [c for c in all_channels if cmp_fn(c)]
 
     if len(matching_channels) == 0:
         fatal('No channel found')
